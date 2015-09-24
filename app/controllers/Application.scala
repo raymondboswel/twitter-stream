@@ -1,29 +1,44 @@
 package controllers
 
-import play.api.libs.json.Json
-import play.api.mvc._
-import play.api.libs.oauth.{ConsumerKey, RequestToken}
-import play.api.Play
-import scala.concurrent.Future
-import play.api.libs.concurrent.Execution.Implicits._
-import play.api.libs.oauth.OAuthCalculator
-import play.api.libs.iteratee.Iteratee
-import play.api.Logger
+import actors.TwitterStreamer.TwitterStreamer
+import akka.actor.ActorRef
 import play.api.Play.current
+import play.api.libs.concurrent.Execution.Implicits._
+import play.api.libs.iteratee._
+import play.api.libs.json.{JsValue, JsObject, Json}
+import play.api.libs.oauth.{ConsumerKey, OAuthCalculator, RequestToken}
 import play.api.libs.ws._
+import play.api.mvc._
+import play.api.{Logger, Play}
+import play.extras.iteratees._
+import actors.TwitterStreamer
+import scala.concurrent.Future
 
 class Application extends Controller {
+
+  val (iteratee, enumerator) = Concurrent.joined[Array[Byte]]
+
+  val jsonStream: Enumerator[JsObject] =
+    enumerator &>
+      Encoding.decode() &>
+      Enumeratee.grouped(JsonIteratees.jsSimpleObject)
+
 
   def index = Action {
     Ok(views.html.index("Your new application is ready."))
   }
 
-  val loggingIteratee = Iteratee.foreach[Array[Byte]] { array =>
-    Logger.info(array.map(_.toChar).mkString)
+  val loggingIteratee = Iteratee.foreach[JsObject] { value =>
+    Logger.info(value.toString)
   }
 
+  jsonStream run loggingIteratee
 
-  def tweets = Action.async {
+  def tweets = WebSocket.acceptWithActor[String, JsValue] {
+    (request: RequestHeader) => (out: ActorRef) => TwitterStreamer.props(out)
+  }
+
+  def tweets_backup = Action.async {
     credentials.map { case (consumerKey, requestToken) =>
       WS
         .url("https://stream.twitter.com/1.1/statuses/filter.json")
@@ -31,7 +46,7 @@ class Application extends Controller {
         .withQueryString("track" -> "cats")
         .get {response =>
         Logger.info("Status: " + response.status)
-        loggingIteratee}
+        iteratee}
         .map { _ =>
         Ok("Stream closed")
       }
