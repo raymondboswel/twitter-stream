@@ -1,6 +1,6 @@
 package controllers
 
-import actors.TwitterStreamer.TwitterStreamer
+
 import akka.actor.ActorRef
 import play.api.Play.current
 import play.api.libs.concurrent.Execution.Implicits._
@@ -24,8 +24,9 @@ class Application extends Controller {
       Enumeratee.grouped(JsonIteratees.jsSimpleObject)
 
 
-  def index = Action {
-    Ok(views.html.index("Your new application is ready."))
+  def index = Action {  implicit request =>
+  Ok(views.html.index("Tweets"))
+
   }
 
   val loggingIteratee = Iteratee.foreach[JsObject] { value =>
@@ -35,7 +36,8 @@ class Application extends Controller {
   jsonStream run loggingIteratee
 
   def tweets = WebSocket.acceptWithActor[String, JsValue] {
-    (request: RequestHeader) => (out: ActorRef) => TwitterStreamer.props(out)
+    Logger.info("Hit tweets endpoint")
+    request => out => TwitterStreamer.props(out)
   }
 
   def tweets_backup = Action.async {
@@ -63,7 +65,7 @@ class Application extends Controller {
     Ok(json)
   }
 
-  def credentials: Option[(ConsumerKey, RequestToken)] = for {
+   def credentials: Option[(ConsumerKey, RequestToken)] = for {
     apiKey <- Play.configuration.getString("twitter.apiKey")
     apiSecret <- Play.configuration.getString("twitter.apiSecret")
     token <- Play.configuration.getString("twitter.token")
