@@ -39,7 +39,7 @@ class TwitterStreamer(out: ActorRef) extends Actor {
         val url = "https://stream.twitter.com/1.1/statuses/filter.json"
         WS
           .url(url)
-          .withRequestTimeout(-1)
+          .withRequestTimeout(0)
           .sign(OAuthCalculator(consumerKey, requestToken))
           .withQueryString("track" -> "cats")
           .get { response =>
@@ -55,12 +55,13 @@ class TwitterStreamer(out: ActorRef) extends Actor {
     }
 
     def subscribe(out: ActorRef): Unit = {
-      if (broadcastEnumerator == None) {
+      if (broadcastEnumerator.isEmpty) {
+        Logger.info("Connecting")
         connect()
       }
       val twitterClient = Iteratee.foreach[JsObject] { t => out ! t }
       broadcastEnumerator.map { enumerator =>
-        enumerator run twitterClient
+        enumerator.run(twitterClient)
       }
     }
 
